@@ -30,8 +30,6 @@ class TaskAPIView(APIView):
         return SuccessResponseWithData(data=serializer.data, status=200)
 
     def post(self, request: Request) -> Response:
-        # team length > 1 -> serializer
-        # team name in ["", ... 7가지] -> serializer
         # TODO:create task and subtasks ???? -> 이것도 serializer에서????
         # TODO: user_id 따로 받아서 create_user에 넣어주어야 하나?
         # TODO: transaction 처리 잘 되나 테스트
