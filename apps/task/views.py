@@ -6,33 +6,33 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework import status
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
 
 from common.common import SuccessResponse, SuccessResponseWithData, ErrorResponse
+
+# from common.custom_api_view import CustomAPIView
 from task.models import Task, Subtask
 from user.models import User
 from task.serializers import TaskSerializer, SubtaskSerializer
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 
 
 class TaskAPIView(APIView):
-    def get(self, request: Request) -> Response:
-        # check user team
-        # team의 subtask가 속하는 task 반환
-        user_id = request.data.get("user_id")
-        if user_id is None:
-            return ErrorResponse(msg="'user_id' field is required.")
+    """
+    GET: 소속 팀이 할당받은 모든 TASK 읽기(권한: 인증된 모든 팀원)
+    POST: TASK 생성(권한: 인증된 모든 팀원) -> 생성된 Task ID 반환
+    """
 
-        team = get_object_or_404(User, id=user_id).team
-        task_list = Task.objects.filter(Q(team__icontains=team))
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        task_list = Task.objects.filter(Q(team__icontains=request.user.team))
         serializer = TaskSerializer(task_list, many=True)
-        # TODO: subtask의 처리 상태까지 반환
         return SuccessResponseWithData(data=serializer.data, status=200)
 
     def post(self, request: Request) -> Response:
-        # TODO:create task and subtasks ???? -> 이것도 serializer에서????
-        # TODO: user_id 따로 받아서 create_user에 넣어주어야 하나?
-        # TODO: transaction 처리 잘 되나 테스트
+        request.data["create_user"] = request.user
         serializer = TaskSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -41,6 +41,14 @@ class TaskAPIView(APIView):
 
 
 class TaskDetailAPIView(APIView):
+    """
+    GET: Task ID에 해당하는 Task 읽기(권한: 인증된 모든 팀원)
+    PATCH : Task ID에 해당하는 Task 수정(권한: 생성자(create_user))
+    """
+
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
     def get(self, request: Request, task_id: str) -> Response:
         task = Task.objects.get(id=task_id)
         serializer = TaskSerializer(task)
@@ -48,13 +56,9 @@ class TaskDetailAPIView(APIView):
 
     def patch(self, request: Request, task_id: str) -> Response:
         # Subtask 상태확인
-        user_id = request.data.get("user_id")
-        if user_id is None:
-            return ErrorResponse(msg="'user_id' field is required.", status=400)
-
         task = get_object_or_404(Task, id=task_id)
-        if user_id != task.create_user:
-            return ErrorResponse(msg="Unauthorized user", status=403)
+        if request.user != task.create_user:
+            return ErrorResponse(msg="Permission denied.", status=403)
 
         serializer = TaskSerializer(task, data=request.data, partial=True)
         if serializer.is_valid():
@@ -64,24 +68,29 @@ class TaskDetailAPIView(APIView):
 
 
 class SubtaskDetailAPIView(APIView):
+    """
+    PATCH: subtask 완료처리(권한: subtask 할당받은 팀에 소속된 팀원)
+    """
+
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
     def patch(self, request: Request, task_id: str, subtask_id: str) -> Response:
-        user_id = request.data.get("user_id")
-        if user_id is None:
-            return ErrorResponse(msg="'user_id' field is required.", status=400)
-        team = get_object_or_404(User, id=user_id).team
-
-        try:
-            subtask = Subtask.objects.get(id=subtask_id)
-        except Subtask.DoesNotExist:
-            return ErrorResponse(msg=f"Subtask not found", status=404)
-
+        team = get_object_or_404(User, id=request.user).team
+        subtask = get_object_or_404(Subtask, id=subtask_id)
         if team != subtask.team:
             return ErrorResponse(msg="Unauthorized team member", status=403)
 
-        subtask.is_complete = True
-        subtask.completed_date = datetime.now()
-        serializer = SubtaskSerializer(subtask)
+        if subtask.is_complete:
+            return ErrorResponse(
+                msg=f"subtask id: '{subtask.id}' is already completed", status=400
+            )
+        serializer = SubtaskSerializer(
+            subtask,
+            data={"is_complete": True, "completed_date": datetime.now()},
+            partial=True,
+        )
         if serializer.is_valid():
-            subtask.save()
-            return SuccessResponseWithData(subtask, status=201)
+            serializer.save()
+            return SuccessResponseWithData(serializer.data, status=201)
         return ErrorResponse(msg=serializer.errors, status=400)

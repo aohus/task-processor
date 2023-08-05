@@ -11,10 +11,6 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Invalid team name '{value}'")
         return value
 
-    def create(self, validated_data):
-        validated_data["password"] = make_password(validated_data["password"])
-        return super().create(validated_data)
-
     class Meta:
         model = User
         fields = "__all__"

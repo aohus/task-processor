@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from django.db import transaction
 from rest_framework import serializers
 from task.models import Task, Subtask
@@ -6,6 +7,8 @@ from user.models import User
 
 
 class TaskSerializer(serializers.ModelSerializer):
+    subtasks = serializers.SerializerMethodField("get_subtasks")
+
     def validate_team(self, value: str):
         try:
             value = json.loads(value)
@@ -26,10 +29,9 @@ class TaskSerializer(serializers.ModelSerializer):
             )
         return value
 
-    # def validate(self, attrs):
-    #     user: User = self.context["request"].create_user
-    #     team: str = attrs["team"]
-    #     content: str = attrs["content"]
+    def get_subtasks(self, instance):
+        subtask_teams = Subtask.objects.filter(task=instance).values()
+        return list(subtask_teams)
 
     @transaction.atomic
     def create(self, validated_data):
@@ -43,32 +45,47 @@ class TaskSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         new_subtask_teams = validated_data.get("team")  # 이거 왜 스트링아니?
-        origin_subtask_teams = json.loads(Task.objects.get(id=instance.id).team)
+        old_subtask_teams = eval(Task.objects.get(id=instance.id).team)
         completed_teams = Subtask.objects.filter(
-            task=instance.id, team__in=origin_subtask_teams, is_complete=True
-        ).values("team")
-        validated_data["team"] = new_subtask_teams.append(completed_teams)
+            task=instance.id, team__in=old_subtask_teams, is_complete=True
+        ).values_list("team", flat=True)
 
-        remove_teams = (
-            set(origin_subtask_teams) - set(new_subtask_teams) - set(completed_teams)
+        validated_data["team"] = new_subtask_teams + list(completed_teams)
+        teams_to_remove = (
+            set(old_subtask_teams) - set(new_subtask_teams) - set(list(completed_teams))
         )
-        register_teams = set(new_subtask_teams) - set(origin_subtask_teams)
 
-        Subtask.objects.filter(task_id=instance.id, team__in=remove_teams).delete()
+        teams_to_add = set(new_subtask_teams) - set(old_subtask_teams)
+
+        Subtask.objects.filter(task_id=instance.id, team__in=teams_to_remove).delete()
         Subtask.objects.bulk_create(
-            [Subtask(task_id=instance.id, team=team) for team in register_teams]
+            [Subtask(task_id=instance.id, team=team) for team in teams_to_add]
         )
-        return super().update(validated_data)
+        return super().update(instance, validated_data)
 
     class Meta:
         model = Task
-        fields = ["create_user", "team", "title", "content"]
+        fields = ["id", "create_user", "team", "title", "content", "subtasks"]
 
 
 class SubtaskSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
-        return
+        # TODO: Task 완료 여부 확인하고 완료 처리
+        instance.is_complete = validated_data.get("is_complete", instance.is_complete)
+        instance.completed_date = validated_data.get(
+            "completed_date", instance.completed_date
+        )
+        instance.save()
+        subtasks_incomplete = Subtask.objects.filter(task_id=instance.task_id).exclude(
+            is_complete=True
+        )
+        if not subtasks_incomplete:
+            task = Task.objects.get(id=instance.task_id)
+            task.is_complete = True
+            task.completed_date = datetime.now()
+            task.save()
+        return instance
 
     class Meta:
         model = Subtask
-        fields = ["team", "is_completed", "completed_date"]
+        fields = ["id", "team", "is_complete", "completed_date"]
