@@ -225,7 +225,15 @@ class TaskDetailAPIViewTest(TestCase):
         )
         self.assertEqual(
             list(response.data["data"].keys()),
-            ["id", "create_user", "team", "title", "content", "subtasks"],
+            [
+                "id",
+                "create_user",
+                "team",
+                "title",
+                "content",
+                "is_complete",
+                "subtasks",
+            ],
         )
         self.assertEqual(response.data["data"]["create_user"], "user001")
         self.assertEqual(response.data["data"]["team"], "['철로', '땅이', '해태']")

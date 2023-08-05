@@ -45,15 +45,9 @@ class TaskSerializer(serializers.ModelSerializer):
         return task
 
     @transaction.atomic
-    def update_subtasks(
-        self, instance, new_subtask_teams, old_subtask_teams, completed_teams
-    ):
-        teams_to_remove = (
-            set(old_subtask_teams) - set(new_subtask_teams) - set(list(completed_teams))
-        )
-
-        teams_to_add = set(new_subtask_teams) - set(old_subtask_teams)
-
+    def update_subtasks(self, instance, new_teams, old_teams, completed_teams):
+        teams_to_remove = set(old_teams) - set(new_teams) - set(list(completed_teams))
+        teams_to_add = set(new_teams) - set(old_teams)
         Subtask.objects.filter(task_id=instance.id, team__in=teams_to_remove).delete()
         Subtask.objects.bulk_create(
             [Subtask(task_id=instance.id, team=team) for team in teams_to_add]
@@ -61,17 +55,15 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         if "team" in validated_data.keys():
-            new_subtask_teams = validated_data.get("team")
-            old_subtask_teams = eval(Task.objects.get(id=instance.id).team)
+            new_teams = validated_data.get("team")
+            old_teams = eval(Task.objects.get(id=instance.id).team)
             completed_teams = Subtask.objects.filter(
-                task=instance.id, team__in=old_subtask_teams, is_complete=True
+                task=instance.id, team__in=old_teams, is_complete=True
             ).values_list("team", flat=True)
 
-            validated_data["team"] = new_subtask_teams + list(completed_teams)
+            validated_data["team"] = new_teams + list(completed_teams)
 
-            self.update_subtasks(
-                instance, new_subtask_teams, old_subtask_teams, completed_teams
-            )
+            self.update_subtasks(instance, new_teams, old_teams, completed_teams)
         return super().update(instance, validated_data)
 
     class Meta:
