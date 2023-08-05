@@ -30,12 +30,14 @@ class TaskSerializer(serializers.ModelSerializer):
         return value
 
     def get_subtasks(self, instance):
-        subtask_teams = Subtask.objects.filter(task=instance).values()
+        subtask_teams = Subtask.objects.filter(task=instance).values(
+            "id", "task_id", "team", "is_complete", "completed_date"
+        )
         return list(subtask_teams)
 
     @transaction.atomic
     def create(self, validated_data):
-        subtask_teams = validated_data.get("team")  # 이거 왜 스트링 아니?
+        subtask_teams = validated_data.get("team")
         task = Task.objects.create(**validated_data)
         Subtask.objects.bulk_create(
             [Subtask(task_id=task.id, team=team) for team in subtask_teams]
@@ -43,14 +45,9 @@ class TaskSerializer(serializers.ModelSerializer):
         return task
 
     @transaction.atomic
-    def update(self, instance, validated_data):
-        new_subtask_teams = validated_data.get("team")  # 이거 왜 스트링아니?
-        old_subtask_teams = eval(Task.objects.get(id=instance.id).team)
-        completed_teams = Subtask.objects.filter(
-            task=instance.id, team__in=old_subtask_teams, is_complete=True
-        ).values_list("team", flat=True)
-
-        validated_data["team"] = new_subtask_teams + list(completed_teams)
+    def update_subtasks(
+        self, instance, new_subtask_teams, old_subtask_teams, completed_teams
+    ):
         teams_to_remove = (
             set(old_subtask_teams) - set(new_subtask_teams) - set(list(completed_teams))
         )
@@ -61,23 +58,46 @@ class TaskSerializer(serializers.ModelSerializer):
         Subtask.objects.bulk_create(
             [Subtask(task_id=instance.id, team=team) for team in teams_to_add]
         )
+
+    def update(self, instance, validated_data):
+        if "team" in validated_data.keys():
+            new_subtask_teams = validated_data.get("team")
+            old_subtask_teams = eval(Task.objects.get(id=instance.id).team)
+            completed_teams = Subtask.objects.filter(
+                task=instance.id, team__in=old_subtask_teams, is_complete=True
+            ).values_list("team", flat=True)
+
+            validated_data["team"] = new_subtask_teams + list(completed_teams)
+
+            self.update_subtasks(
+                instance, new_subtask_teams, old_subtask_teams, completed_teams
+            )
         return super().update(instance, validated_data)
 
     class Meta:
         model = Task
-        fields = ["id", "create_user", "team", "title", "content", "subtasks"]
+        fields = [
+            "id",
+            "create_user",
+            "team",
+            "title",
+            "content",
+            "is_complete",
+            "subtasks",
+        ]
 
 
 class SubtaskSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
-        # TODO: Task 완료 여부 확인하고 완료 처리
         instance.is_complete = validated_data.get("is_complete", instance.is_complete)
         instance.completed_date = validated_data.get(
             "completed_date", instance.completed_date
         )
         instance.save()
-        subtasks_incomplete = Subtask.objects.filter(task_id=instance.task_id).exclude(
-            is_complete=True
+        subtasks_incomplete = (
+            Subtask.objects.filter(task_id=instance.task_id)
+            .exclude(is_complete=True)
+            .values("id")
         )
         if not subtasks_incomplete:
             task = Task.objects.get(id=instance.task_id)

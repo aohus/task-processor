@@ -40,6 +40,7 @@ class TaskAPIViewTest(TestCase):
         cls.url = "/task/"
 
     def test_get_task_with_invalid_authenticated(self):
+        # header에 token 인증 없는 경우 / 잘못된 token인 경우
         response = self.client.get(
             self.url,
             content_type="application/json",
@@ -55,7 +56,8 @@ class TaskAPIViewTest(TestCase):
         self.assertEqual(response.data["detail"].code, "authentication_failed")
         self.assertEqual(response.status_code, 401)
 
-    def test_get_task_with_authenticated(self):
+    def test_get_task(self):
+        # 올바른 요청
         response = self.client.get(
             self.url,
             headers={"Authorization": f"Token {self.user_1_token}"},
@@ -64,7 +66,7 @@ class TaskAPIViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_create_task_with_unauthenticated(self):
-        # with unauthenticated header
+        # post(create task) 요청, 잘못된 token인 경우
         response = self.client.post(
             self.url,
             {
@@ -79,7 +81,7 @@ class TaskAPIViewTest(TestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_create_task_with_invalid_team_field(self):
-        # no team name
+        # 팀 할당하지 않은 경우
         response = self.client.post(
             self.url,
             {
@@ -108,6 +110,7 @@ class TaskAPIViewTest(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_create_tasks(self):
+        # 올바른 task 생성 요청
         response = self.client.post(
             self.url,
             {
@@ -166,7 +169,7 @@ class TaskAPIViewTest(TestCase):
         self.assertEqual(len(response.data["data"]), 0)
 
     def test_creat_task_with_no_title(self):
-        # title required
+        # title 없는 경우
         response = self.client.post(
             self.url,
             {
@@ -214,6 +217,7 @@ class TaskDetailAPIViewTest(TestCase):
         cls.task_id_1 = cls.task_1["id"]
 
     def test_get_task(self):
+        # 올바른 단일 task 요청
         response = self.client.get(
             self.url + str(self.task_id_1),
             headers={"Authorization": f"Token {self.user_1_token}"},
@@ -227,20 +231,31 @@ class TaskDetailAPIViewTest(TestCase):
         self.assertEqual(response.data["data"]["team"], "['철로', '땅이', '해태']")
 
     def test_patch_task(self):
-        # 땅이팀의 땅이 토큰 2번, subtask 완료처리
+        # task 수정요청
+        # 땅이팀 땅이의 2번 토큰으로, 땅이팀 subtask 완료처리
         self.client.patch(
             self.url + str(self.task_id_1) + f"/subtask/{self.ddang_subtask_id}",
             headers={"Authorization": f"Token {self.user_2_token}"},
             content_type="application/json",
         )
 
+        # create_user 아닌 사용자의 요청
+        response = self.client.patch(
+            self.url + str(self.task_id_1),
+            {"team": '["철로","다래"]'},
+            headers={"Authorization": f"Token {self.user_2_token}"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+        # create_user의 요청
         response = self.client.patch(
             self.url + str(self.task_id_1),
             {"team": '["철로","다래"]'},
             headers={"Authorization": f"Token {self.user_1_token}"},
             content_type="application/json",
         )
-        # 땅이팀은 완료된 task라 삭제되지 않고, 다래만 추가
+        # 땅이팀은 의 subtask는 완료된 subtask라 삭제되지 않고, 다래만 추가
         self.assertEqual(response.data["data"]["team"], "['철로', '다래', '땅이']")
 
 
@@ -272,12 +287,24 @@ class SubtaskDetailAPIViewTest(TestCase):
         ).data["data"]
 
     def test_patch_complete_all_subtasks(self):
+        # 단비팀 subtask 완료 처리, 땅이팀의 subtask 남아서 Task는 미완료
         self.client.patch(
             self.url + str(self.task_1["id"]) + f"/subtask/1",
             headers={"Authorization": f"Token {self.user_1_token}"},
             content_type="application/json",
         )
         self.assertEqual(Task.objects.get(id=1).is_complete, False)
+
+        # 이미 완료된 단비팀 subtask 완료 요청
+        r = self.client.patch(
+            self.url + str(self.task_1["id"]) + f"/subtask/1",
+            headers={"Authorization": f"Token {self.user_1_token}"},
+            content_type="application/json",
+        )
+        self.assertEqual(r.data["result_msg"], "subtask id: '1' is already completed")
+        self.assertEqual(r.status_code, 400)
+
+        # 땅이팀 subtask 완료 처리, Task에 속한 모든 Subtask 완료되어 Task 완료처리
         self.client.patch(
             self.url + str(self.task_1["id"]) + f"/subtask/2",
             headers={"Authorization": f"Token {self.user_2_token}"},

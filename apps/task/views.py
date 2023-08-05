@@ -8,8 +8,6 @@ from rest_framework.request import Request
 from rest_framework import status
 
 from common.common import SuccessResponse, SuccessResponseWithData, ErrorResponse
-
-# from common.custom_api_view import CustomAPIView
 from task.models import Task, Subtask
 from user.models import User
 from task.serializers import TaskSerializer, SubtaskSerializer
