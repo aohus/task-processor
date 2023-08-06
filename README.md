@@ -11,6 +11,7 @@
 2. make venv && activate
 
 - python version 3.11 required. If you want other python version please fix [conv/make_venv.sh] file
+
   ```bash
   bash conv/make_venv.sh venv
   source venv/bin/activate
