@@ -9,12 +9,22 @@
    git clone https://github.com/aohus/task-processor.git
    ```
 2. make venv && activate
+   ```bash
+   bash conv/make_venv.sh venv
+   source venv/bin/activate
+   ```
 
-- python version 3.11 required. If you want other python version please fix [conv/make_venv.sh] file
+- python version 3.11 required. If you prefer a different Python version, you can adjust the settings in the [conv/make_venv.sh] file.
+- To install Python 3.11, follow these steps:
 
   ```bash
-  bash conv/make_venv.sh venv
-  source venv/bin/activate
+  # ubuntu
+  sudo apt install python3.11
+  sudo apt install python3.11-venv
+
+  # macos
+  brew update
+  brew install python3.11
   ```
 
 3. go to apps repository && run dev server
