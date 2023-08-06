@@ -9,10 +9,13 @@
    git clone https://github.com/aohus/task-processor.git
    ```
 2. make venv && activate
-   ```bash
-   bash conv/make_venv.sh venv
-   source venv/bin/activate
-   ```
+
+- python version 3.11 required. If you want other python version please fix [conv/make_venv.sh] file
+  ```bash
+  bash conv/make_venv.sh venv
+  source venv/bin/activate
+  ```
+
 3. go to apps repository && run dev server
    ```bash
    cd apps/
